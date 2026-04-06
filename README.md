@@ -71,5 +71,7 @@ pipx uninstall gpgwrap
 
 Remove desktop entry and icon (optional):
 
+```bash
 rm ~/.local/share/applications/gpgwrap.desktop
 rm ~/.local/share/icons/hicolor/256x256/apps/gpgwrap.png
+```
