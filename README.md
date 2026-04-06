@@ -4,6 +4,8 @@ GPGWrap is a lightweight Linux desktop GUI for common OpenPGP tasks using the sy
 
 It provides a simple interface for encrypting, decrypting, signing, and verifying text or files, plus basic key management and key generation.
 
+![GPGWrap screenshot](screenshot.webp)
+
 ## Features
 
 ### Text mode
