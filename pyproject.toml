@@ -26,4 +26,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-gpgwrap = ["assets/*.png", "assets/*.desktop"]
+gpgwrap = ["assets/*.png"]
