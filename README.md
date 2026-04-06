@@ -60,3 +60,16 @@ After that, GPGWrap should appear in your application menu.
 - GPGWrap uses the system GnuPG installation.
 - Your keys remain managed by your local GPG setup.
 - The application is intended for desktop Linux use.
+
+## Uninstall
+
+Remove the application:
+
+```bash
+pipx uninstall gpgwrap
+```
+
+Remove desktop entry and icon (optional):
+
+rm ~/.local/share/applications/gpgwrap.desktop
+rm ~/.local/share/icons/hicolor/256x256/apps/gpgwrap.png
