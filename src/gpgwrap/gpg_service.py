@@ -22,7 +22,7 @@ class GPGService:
             line = line.strip()
             if not line.startswith("[GNUPG:]"):
                 continue
-            raw = line[len("[GNUPG:]"):].strip()
+            raw = line[len("[GNUPG:]") :].strip()
             if not raw:
                 continue
             parts = raw.split()
@@ -57,7 +57,9 @@ class GPGService:
             statuses=self._parse_statuses(completed.stderr),
         )
 
-    def _run_binary(self, args: List[str], input_bytes: Optional[bytes] = None) -> GPGResult:
+    def _run_binary(
+        self, args: List[str], input_bytes: Optional[bytes] = None
+    ) -> GPGResult:
         cmd = [self.gpg_binary, "--batch", "--yes", "--status-fd=2", *args]
 
         try:
@@ -86,6 +88,12 @@ class GPGService:
             returncode=completed.returncode,
             statuses=self._parse_statuses(stderr_text),
         )
+
+    def _mark_ok_if_status_present(self, result: GPGResult, *tags: str) -> GPGResult:
+        present = {item.tag for item in result.statuses}
+        if any(tag in present for tag in tags):
+            result.ok = True
+        return result
 
     # ---------- list keys ----------
 
@@ -172,7 +180,8 @@ class GPGService:
         return self._run_text(args, input_text=text)
 
     def decrypt_text(self, text: str) -> GPGResult:
-        return self._run_text(["--decrypt"], input_text=text)
+        result = self._run_text(["--decrypt"], input_text=text)
+        return self._mark_ok_if_status_present(result, "DECRYPTION_OKAY")
 
     def clearsign_text(self, text: str, signer: str) -> GPGResult:
         return self._run_text(
@@ -226,7 +235,8 @@ class GPGService:
         return self._run_text(args)
 
     def decrypt_file(self, input_file: str, output_file: str) -> GPGResult:
-        return self._run_text(["--output", output_file, "--decrypt", input_file])
+        result = self._run_text(["--output", output_file, "--decrypt", input_file])
+        return self._mark_ok_if_status_present(result, "DECRYPTION_OKAY")
 
     def sign_file(
         self,
@@ -254,11 +264,18 @@ class GPGService:
 
     # ---------- key management ----------
 
+    def import_key_text(self, armored_text: str) -> GPGResult:
+        return self._run_text(["--import"], input_text=armored_text)
+
     def export_public_key_ascii(self, fingerprint: str) -> GPGResult:
         return self._run_text(["--armor", "--export", fingerprint])
 
-    def export_public_key_to_file(self, fingerprint: str, output_file: str) -> GPGResult:
-        return self._run_text(["--output", output_file, "--armor", "--export", fingerprint])
+    def export_public_key_to_file(
+        self, fingerprint: str, output_file: str
+    ) -> GPGResult:
+        return self._run_text(
+            ["--output", output_file, "--armor", "--export", fingerprint]
+        )
 
     def import_key_file(self, file_path: str) -> GPGResult:
         return self._run_text(["--import", file_path])
@@ -272,13 +289,13 @@ class GPGService:
         return self._run_text(["--delete-key", fingerprint])
 
     def generate_key(
-    self,
-    name: str,
-    email: str,
-    comment: str,
-    preset: str,
-    expiry: str,
-    passphrase: str,
+        self,
+        name: str,
+        email: str,
+        comment: str,
+        preset: str,
+        expiry: str,
+        passphrase: str,
     ) -> GPGResult:
         lines: List[str] = []
 
@@ -330,7 +347,8 @@ class GPGService:
             ["--pinentry-mode", "loopback", "--generate-key"],
             input_text=batch,
         )
-# ---------- helper messages ----------
+
+    # ---------- helper messages ----------
 
     def _status_tags(self, result: GPGResult) -> set[str]:
         return {item.tag for item in result.statuses}
@@ -415,3 +433,19 @@ class GPGService:
         if "FAILURE" in tags:
             return "GPG operation failed."
         return "Operation failed."
+
+    def sign_public_key(
+        self,
+        target_fingerprint: str,
+        signer: str,
+        local_only: bool = True,
+    ) -> GPGResult:
+        args = ["--local-user", signer]
+        args.append("--quick-lsign-key" if local_only else "--quick-sign-key")
+        args.append(target_fingerprint)
+        return self._run_text(args)
+
+    def set_ownertrust(self, target_fingerprint: str, trust_level: str) -> GPGResult:
+        return self._run_text(
+            ["--quick-set-ownertrust", target_fingerprint, trust_level]
+        )

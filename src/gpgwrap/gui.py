@@ -5,7 +5,7 @@ from typing import List, Optional
 from importlib.resources import files
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import QStackedWidget
 from PySide6.QtWidgets import (
     QApplication,
@@ -58,6 +58,7 @@ class MainWindow(QMainWindow):
         self._load_icon()
         self._build_ui()
         self._build_menu()
+        self._build_shortcuts()
         self.refresh_keys()
 
         if not self.gpg.check_gpg_available():
@@ -97,6 +98,17 @@ class MainWindow(QMainWindow):
         app_menu.addSeparator()
         app_menu.addAction(about_action)
         app_menu.addAction(quit_action)
+
+    def _build_shortcuts(self) -> None:
+        self.shortcut_encrypt = QShortcut(QKeySequence("Ctrl+E"), self)
+        self.shortcut_encrypt.activated.connect(
+            lambda: self._run_shortcut_action("encrypt")
+        )
+
+        self.shortcut_decrypt = QShortcut(QKeySequence("Ctrl+D"), self)
+        self.shortcut_decrypt.activated.connect(
+            lambda: self._run_shortcut_action("decrypt")
+        )
 
     def _build_ui(self) -> None:
         central = QWidget()
@@ -201,8 +213,12 @@ class MainWindow(QMainWindow):
 
         self.text_sign_mode_label = QLabel("Sign mode:")
         self.text_sign_mode_combo = QComboBox()
-        self.text_sign_mode_combo.addItems(["Clear-signed message", "Detached signature"])
-        self.text_sign_mode_combo.currentIndexChanged.connect(self._apply_text_action_ui)
+        self.text_sign_mode_combo.addItems(
+            ["Clear-signed message", "Detached signature"]
+        )
+        self.text_sign_mode_combo.currentIndexChanged.connect(
+            self._apply_text_action_ui
+        )
 
         self.text_signer_label = QLabel("Signing key:")
         self.text_signer_combo = QComboBox()
@@ -232,9 +248,7 @@ class MainWindow(QMainWindow):
         self.text_signature_label = QLabel("Detached signature:")
         verify_layout.addWidget(self.text_signature_label)
 
-        self.text_signature_input = self._make_plain(
-            "Paste detached signature here..."
-        )
+        self.text_signature_input = self._make_plain("Paste detached signature here...")
         verify_layout.addWidget(self.text_signature_input)
 
         layout.addWidget(self.text_verify_options_box)
@@ -257,7 +271,9 @@ class MainWindow(QMainWindow):
         self.text_execute_btn = QPushButton("Run action")
         self.text_execute_btn.clicked.connect(self.run_text_action)
         self.text_copy_btn = QPushButton("Copy text")
-        self.text_copy_btn.clicked.connect(lambda: self._copy_text(self.text_editor.toPlainText()))
+        self.text_copy_btn.clicked.connect(
+            lambda: self._copy_text(self.text_editor.toPlainText())
+        )
         self.text_clear_btn = QPushButton("Clear")
         self.text_clear_btn.clicked.connect(self._clear_text_mode)
         self.text_wrap_check = QCheckBox("Wrap text")
@@ -426,7 +442,9 @@ class MainWindow(QMainWindow):
 
         return box
 
-    def _make_plain(self, placeholder: str = "", readonly: bool = False) -> QPlainTextEdit:
+    def _make_plain(
+        self, placeholder: str = "", readonly: bool = False
+    ) -> QPlainTextEdit:
         widget = QPlainTextEdit()
         widget.setPlaceholderText(placeholder)
         widget.setReadOnly(readonly)
@@ -443,6 +461,27 @@ class MainWindow(QMainWindow):
             self.mode_stack.setCurrentWidget(self.text_mode_widget)
         else:
             self.mode_stack.setCurrentWidget(self.file_mode_widget)
+
+    def _run_shortcut_action(self, action: str) -> None:
+        if self.current_mode == "text":
+            if action == "encrypt":
+                self.text_encrypt_btn.setChecked(True)
+            elif action == "decrypt":
+                self.text_decrypt_btn.setChecked(True)
+            else:
+                return
+
+            self.run_text_action()
+
+        else:
+            if action == "encrypt":
+                self.file_encrypt_btn.setChecked(True)
+            elif action == "decrypt":
+                self.file_decrypt_btn.setChecked(True)
+            else:
+                return
+
+            self.run_file_action()
 
     def _on_text_action_changed(self) -> None:
         if self.text_encrypt_btn.isChecked():
@@ -473,7 +512,9 @@ class MainWindow(QMainWindow):
         self.text_sign_options_box.setVisible(action == "sign")
         self.text_verify_options_box.setVisible(action == "verify")
 
-        encrypt_sign_visible = action == "encrypt" and self.sign_and_encrypt_check.isChecked()
+        encrypt_sign_visible = (
+            action == "encrypt" and self.sign_and_encrypt_check.isChecked()
+        )
         self.encrypt_signer_label.setVisible(encrypt_sign_visible)
         self.encrypt_signer_combo.setVisible(encrypt_sign_visible)
 
@@ -492,13 +533,19 @@ class MainWindow(QMainWindow):
         elif action == "sign":
             self.text_execute_btn.setText("Sign")
             if self.text_sign_mode_combo.currentIndex() == 0:
-                self.text_editor.setPlaceholderText("Paste plaintext to clear-sign here...")
+                self.text_editor.setPlaceholderText(
+                    "Paste plaintext to clear-sign here..."
+                )
             else:
-                self.text_editor.setPlaceholderText("Paste plaintext to create detached signature for...")
+                self.text_editor.setPlaceholderText(
+                    "Paste plaintext to create detached signature for..."
+                )
         else:
             self.text_execute_btn.setText("Verify")
             if self.verify_mode_combo.currentIndex() == 0:
-                self.text_editor.setPlaceholderText("Paste clear-signed message here...")
+                self.text_editor.setPlaceholderText(
+                    "Paste clear-signed message here..."
+                )
             else:
                 self.text_editor.setPlaceholderText("Paste plaintext/message here...")
 
@@ -508,7 +555,9 @@ class MainWindow(QMainWindow):
         self.file_encrypt_options_box.setVisible(action == "encrypt")
         self.file_sign_options_box.setVisible(action == "sign")
 
-        enc_sign_visible = action == "encrypt" and self.file_sign_and_encrypt_check.isChecked()
+        enc_sign_visible = (
+            action == "encrypt" and self.file_sign_and_encrypt_check.isChecked()
+        )
         self.file_encrypt_signer_label.setVisible(enc_sign_visible)
         self.file_encrypt_signer_combo.setVisible(enc_sign_visible)
 
@@ -529,16 +578,22 @@ class MainWindow(QMainWindow):
             self.file_output_edit.setPlaceholderText("Output decrypted file...")
         elif action == "sign":
             self.file_execute_btn.setText("Sign")
-            self.file_output_edit.setPlaceholderText("Output signature file or signed file...")
+            self.file_output_edit.setPlaceholderText(
+                "Output signature file or signed file..."
+            )
         else:
             self.file_execute_btn.setText("Verify")
             self.file_output_edit.setPlaceholderText("Not used for verify")
 
     def _apply_text_wrap(self) -> None:
-        mode = QPlainTextEdit.WidgetWidth if self.text_wrap_check.isChecked() else QPlainTextEdit.NoWrap
+        mode = (
+            QPlainTextEdit.WidgetWidth
+            if self.text_wrap_check.isChecked()
+            else QPlainTextEdit.NoWrap
+        )
         self.text_editor.setLineWrapMode(mode)
         self.text_signature_input.setLineWrapMode(mode)
-    
+
     def _toggle_log_visibility(self, checked: bool) -> None:
         self.log_output.setVisible(checked)
         self.log_clear_btn.setVisible(checked)
@@ -601,7 +656,7 @@ class MainWindow(QMainWindow):
             flags.append("disabled")
         suffix = f" [{' '.join(flags)}]" if flags else ""
         return f"{key.primary_uid} | {key.key_id}{suffix}"
-    
+
     def _recipient_summary(self, ids: List[str]) -> str:
         if not ids:
             return "No recipients selected."
@@ -614,10 +669,14 @@ class MainWindow(QMainWindow):
         return ", ".join(labels) if labels else "No recipients selected."
 
     def _update_text_recipient_label(self) -> None:
-        self.text_recipients_label.setText(self._recipient_summary(self.text_recipient_ids))
+        self.text_recipients_label.setText(
+            self._recipient_summary(self.text_recipient_ids)
+        )
 
     def _update_file_recipient_label(self) -> None:
-        self.file_recipients_label.setText(self._recipient_summary(self.file_recipient_ids))
+        self.file_recipients_label.setText(
+            self._recipient_summary(self.file_recipient_ids)
+        )
 
     def _choose_text_recipients(self) -> None:
         dialog = RecipientPickerDialog(self.public_keys, self.text_recipient_ids, self)
@@ -748,7 +807,9 @@ class MainWindow(QMainWindow):
         if action == "encrypt":
             recipients = self.text_recipient_ids
             if not recipients:
-                self._show_error("Missing recipient", "Select at least one recipient public key.")
+                self._show_error(
+                    "Missing recipient", "Select at least one recipient public key."
+                )
                 return
 
             text = self.text_editor.toPlainText().strip()
@@ -760,7 +821,9 @@ class MainWindow(QMainWindow):
             if self.sign_and_encrypt_check.isChecked():
                 signer = self._current_encrypt_signer()
                 if not signer:
-                    self._show_error("Missing signing key", "Select a secret key for sign+encrypt.")
+                    self._show_error(
+                        "Missing signing key", "Select a secret key for sign+encrypt."
+                    )
                     return
 
             result = self.gpg.encrypt_text(text, recipients, sign_with=signer)
@@ -768,7 +831,9 @@ class MainWindow(QMainWindow):
 
             if result.ok:
                 self.text_editor.setPlainText(result.stdout.strip())
-                self.text_status_label.setText(f"Status: {self.gpg.describe_encrypt_result(result)}")
+                self.text_status_label.setText(
+                    f"Status: {self.gpg.describe_encrypt_result(result)}"
+                )
             else:
                 msg = self._friendly_error(result, "Encryption failed.")
                 self.text_status_label.setText(f"Status: {msg}")
@@ -803,7 +868,9 @@ class MainWindow(QMainWindow):
 
             signer = self._current_text_signer()
             if not signer:
-                self._show_error("Missing signing key", "Select a secret key for signing.")
+                self._show_error(
+                    "Missing signing key", "Select a secret key for signing."
+                )
                 return
 
             detached = self.text_sign_mode_combo.currentIndex() == 1
@@ -816,7 +883,9 @@ class MainWindow(QMainWindow):
 
             if result.ok:
                 self.text_editor.setPlainText(result.stdout.strip())
-                self.text_status_label.setText(f"Status: {self.gpg.describe_sign_result(result)}")
+                self.text_status_label.setText(
+                    f"Status: {self.gpg.describe_sign_result(result)}"
+                )
             else:
                 msg = self._friendly_error(result, "Signing failed.")
                 self.text_status_label.setText(f"Status: {msg}")
@@ -826,7 +895,9 @@ class MainWindow(QMainWindow):
             if self.verify_mode_combo.currentIndex() == 0:
                 signed_text = self.text_editor.toPlainText().strip()
                 if not signed_text:
-                    self._show_error("Missing text", "Paste clear-signed message first.")
+                    self._show_error(
+                        "Missing text", "Paste clear-signed message first."
+                    )
                     return
                 result = self.gpg.verify_clearsigned_text(signed_text)
             else:
@@ -836,7 +907,9 @@ class MainWindow(QMainWindow):
                     self._show_error("Missing text", "Paste message/plaintext first.")
                     return
                 if not signature:
-                    self._show_error("Missing detached signature", "Paste detached signature first.")
+                    self._show_error(
+                        "Missing detached signature", "Paste detached signature first."
+                    )
                     return
                 result = self.gpg.verify_detached_signature(text, signature)
 
@@ -868,14 +941,18 @@ class MainWindow(QMainWindow):
 
             recipients = self.file_recipient_ids
             if not recipients:
-                self._show_error("Missing recipient", "Select at least one recipient public key.")
+                self._show_error(
+                    "Missing recipient", "Select at least one recipient public key."
+                )
                 return
 
             signer = None
             if self.file_sign_and_encrypt_check.isChecked():
                 signer = self._current_file_encrypt_signer()
                 if not signer:
-                    self._show_error("Missing signing key", "Select a secret key for sign+encrypt.")
+                    self._show_error(
+                        "Missing signing key", "Select a secret key for sign+encrypt."
+                    )
                     return
 
             result = self.gpg.encrypt_file(
@@ -888,7 +965,9 @@ class MainWindow(QMainWindow):
             self._append_log("Encrypt file", result)
 
             if result.ok:
-                self.file_status_label.setText(f"Status: {self.gpg.describe_encrypt_result(result)}")
+                self.file_status_label.setText(
+                    f"Status: {self.gpg.describe_encrypt_result(result)}"
+                )
             else:
                 msg = self._friendly_error(result, "File encryption failed.")
                 self.file_status_label.setText(f"Status: {msg}")
@@ -922,7 +1001,9 @@ class MainWindow(QMainWindow):
 
             signer = self._current_file_signer()
             if not signer:
-                self._show_error("Missing signing key", "Select a secret key for signing.")
+                self._show_error(
+                    "Missing signing key", "Select a secret key for signing."
+                )
                 return
 
             result = self.gpg.sign_file(
@@ -935,7 +1016,9 @@ class MainWindow(QMainWindow):
             self._append_log("Sign file", result)
 
             if result.ok:
-                self.file_status_label.setText(f"Status: {self.gpg.describe_sign_result(result)}")
+                self.file_status_label.setText(
+                    f"Status: {self.gpg.describe_sign_result(result)}"
+                )
             else:
                 msg = self._friendly_error(result, "File signing failed.")
                 self.file_status_label.setText(f"Status: {msg}")
@@ -944,7 +1027,9 @@ class MainWindow(QMainWindow):
         elif action == "verify":
             signature_file = self.file_signature_edit.text().strip()
             if not signature_file:
-                self._show_error("Missing signature file", "Select detached signature file first.")
+                self._show_error(
+                    "Missing signature file", "Select detached signature file first."
+                )
                 return
 
             result = self.gpg.verify_file_signature(input_file, signature_file)

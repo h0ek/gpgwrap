@@ -94,6 +94,7 @@ class AboutDialog(QDialog):
         layout.addSpacing(12)
         layout.addWidget(close_btn, alignment=Qt.AlignCenter)
 
+
 class GenerateKeyDialog(QDialog):
     def __init__(self, gpg: GPGService, parent=None) -> None:
         super().__init__(parent)
@@ -165,13 +166,17 @@ class GenerateKeyDialog(QDialog):
             QMessageBox.warning(self, "Missing email", "Email is required.")
             return
         if not expiry:
-            QMessageBox.warning(self, "Missing expiry", "Provide expiry or enable no expiry.")
+            QMessageBox.warning(
+                self, "Missing expiry", "Provide expiry or enable no expiry."
+            )
             return
         if not passphrase:
             QMessageBox.warning(self, "Missing passphrase", "Passphrase is required.")
             return
         if passphrase != confirm:
-            QMessageBox.warning(self, "Passphrase mismatch", "Passphrases do not match.")
+            QMessageBox.warning(
+                self, "Passphrase mismatch", "Passphrases do not match."
+            )
             return
 
         result = self.gpg.generate_key(
@@ -191,6 +196,84 @@ class GenerateKeyDialog(QDialog):
             self.output.setPlainText(msg)
             QMessageBox.critical(self, "Key generation failed", msg)
 
+class TrustKeyDialog(QDialog):
+    def __init__(self, gpg: GPGService, target_fingerprint: str, secret_keys: List[GPGKey], parent=None) -> None:
+        super().__init__(parent)
+        self.gpg = gpg
+        self.target_fingerprint = target_fingerprint
+        self.secret_keys = secret_keys
+
+        self.setWindowTitle("Trust / sign key")
+        self.resize(560, 260)
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout(self)
+
+        info = QLabel(
+            "Use this dialog after verifying the key fingerprint out-of-band.\n"
+            "Local signature is usually enough to make the key usable for encryption."
+        )
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        form = QFormLayout()
+
+        self.target_edit = QLineEdit(self.target_fingerprint)
+        self.target_edit.setReadOnly(True)
+
+        self.signer_combo = QComboBox()
+        for key in self.secret_keys:
+            self.signer_combo.addItem(f"{key.primary_uid} | {key.key_id}", key.key_id)
+
+        has_secret_keys = bool(self.secret_keys)
+
+        self.sign_key_check = QCheckBox("Sign this key")
+        self.sign_key_check.setChecked(has_secret_keys)
+        self.sign_key_check.setEnabled(has_secret_keys)
+
+        self.local_sign_check = QCheckBox("Create local signature")
+        self.local_sign_check.setChecked(True)
+        self.local_sign_check.setEnabled(has_secret_keys)
+
+        self.signer_combo.setEnabled(has_secret_keys)
+        self.sign_key_check.toggled.connect(lambda v: self.signer_combo.setEnabled(v and has_secret_keys))
+        self.sign_key_check.toggled.connect(lambda v: self.local_sign_check.setEnabled(v and has_secret_keys))
+
+        self.ownertrust_combo = QComboBox()
+        self.ownertrust_combo.addItem("Do not change ownertrust", "")
+        self.ownertrust_combo.addItem("Undefined", "undefined")
+        self.ownertrust_combo.addItem("Never", "never")
+        self.ownertrust_combo.addItem("Marginal", "marginal")
+        self.ownertrust_combo.addItem("Full", "full")
+        self.ownertrust_combo.addItem("Ultimate", "ultimate")
+
+        form.addRow("Target fingerprint:", self.target_edit)
+        form.addRow("Sign key:", self.sign_key_check)
+        form.addRow("Sign with secret key:", self.signer_combo)
+        form.addRow("Certification:", self.local_sign_check)
+        form.addRow("Ownertrust:", self.ownertrust_combo)
+
+        layout.addLayout(form)
+
+        btn_row = QHBoxLayout()
+        ok_btn = QPushButton("Apply")
+        ok_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+
+        btn_row.addWidget(ok_btn)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addStretch(1)
+        layout.addLayout(btn_row)
+
+    def selected_signer(self) -> str | None:
+        value = self.signer_combo.currentData()
+        return str(value) if value is not None else None
+
+    def selected_ownertrust(self) -> str:
+        value = self.ownertrust_combo.currentData()
+        return str(value) if value else ""
 
 class ManageKeysDialog(QDialog):
     def __init__(self, gpg: GPGService, parent=None) -> None:
@@ -232,8 +315,14 @@ class ManageKeysDialog(QDialog):
         self.export_btn = QPushButton("Export public key")
         self.export_btn.clicked.connect(self.export_public_key)
 
-        self.import_btn = QPushButton("Import key")
+        self.import_btn = QPushButton("Import key from file")
         self.import_btn.clicked.connect(self.import_key)
+
+        self.import_clipboard_btn = QPushButton("Import key from clipboard")
+        self.import_clipboard_btn.clicked.connect(self.import_key_from_clipboard)
+
+        self.trust_btn = QPushButton("Trust / sign key")
+        self.trust_btn.clicked.connect(self.configure_trust_for_selected_key)
 
         self.delete_btn = QPushButton("Delete key")
         self.delete_btn.clicked.connect(self.delete_key)
@@ -244,15 +333,17 @@ class ManageKeysDialog(QDialog):
         btn_row.addWidget(self.copy_btn, 0, 0)
         btn_row.addWidget(self.export_btn, 0, 1)
         btn_row.addWidget(self.import_btn, 1, 0)
-        btn_row.addWidget(self.delete_btn, 1, 1)
-        btn_row.addWidget(self.generate_btn, 2, 0, 1, 2)
+        btn_row.addWidget(self.import_clipboard_btn, 1, 1)
+        btn_row.addWidget(self.trust_btn, 2, 0)
+        btn_row.addWidget(self.delete_btn, 2, 1)
+        btn_row.addWidget(self.generate_btn, 3, 0, 1, 2)
 
         layout.addLayout(btn_row)
 
         self.output = QTextEdit()
         self.output.setReadOnly(True)
         layout.addWidget(self.output)
-    
+
     def _remember_clicked_item(self, item: QListWidgetItem) -> None:
         self.key_list.setCurrentItem(item)
 
@@ -271,7 +362,11 @@ class ManageKeysDialog(QDialog):
             if not self._match_key(key, term):
                 continue
 
-            suffix = " [secret key present]" if key.fingerprint in self.secret_fingerprints else ""
+            suffix = (
+                " [secret key present]"
+                if key.fingerprint in self.secret_fingerprints
+                else ""
+            )
 
             item = QListWidgetItem(f"{key.primary_uid} | {key.key_id}{suffix}")
             item.setData(Qt.UserRole, key.fingerprint or key.key_id)
@@ -299,7 +394,9 @@ class ManageKeysDialog(QDialog):
 
     def refresh_keys(self) -> None:
         self.public_keys = self.gpg.list_public_keys()
-        self.secret_fingerprints = {key.fingerprint for key in self.gpg.list_secret_keys()}
+        self.secret_fingerprints = {
+            key.fingerprint for key in self.gpg.list_secret_keys()
+        }
         self.populate_list()
         self.output.setPlainText(f"Loaded {len(self.public_keys)} public keys.")
 
@@ -337,7 +434,9 @@ class ManageKeysDialog(QDialog):
         result = self.gpg.export_public_key_to_file(fingerprint, path)
         if result.ok:
             self.output.setPlainText(f"Public key exported to:\n{path}")
-            QMessageBox.information(self, "Exported", f"Public key exported to:\n{path}")
+            QMessageBox.information(
+                self, "Exported", f"Public key exported to:\n{path}"
+            )
         else:
             msg = result.stderr.strip() or self.gpg.describe_generic_failure(result)
             self.output.setPlainText(msg)
@@ -353,11 +452,70 @@ class ManageKeysDialog(QDialog):
         if not path:
             return
 
+        before = {key.fingerprint for key in self.public_keys}
+
         result = self.gpg.import_key_file(path)
         if result.ok:
+            self.refresh_keys()
+            after = {key.fingerprint for key in self.public_keys}
+            new_keys = [fp for fp in after if fp not in before]
+
             self.output.setPlainText(f"Key imported successfully:\n{path}")
             QMessageBox.information(self, "Imported", "Key imported successfully.")
+
+            if new_keys:
+                choice = QMessageBox.question(
+                    self,
+                    "Configure trust",
+                    "Do you want to configure trust/signing for the imported key now?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes,
+                )
+                if choice == QMessageBox.Yes:
+                    self.configure_trust(new_keys[0])
+        else:
+            msg = result.stderr.strip() or self.gpg.describe_generic_failure(result)
+            self.output.setPlainText(msg)
+            QMessageBox.critical(self, "Import failed", msg)
+
+    def import_key_from_clipboard(self) -> None:
+        text = QApplication.clipboard().text().strip()
+        if not text:
+            QMessageBox.warning(self, "Clipboard is empty", "Clipboard does not contain any text.")
+            return
+
+        if "BEGIN PGP PUBLIC KEY BLOCK" not in text and "BEGIN PGP PRIVATE KEY BLOCK" not in text:
+            choice = QMessageBox.question(
+                self,
+                "Clipboard content",
+                "Clipboard does not look like an armored OpenPGP key block.\n\nTry import anyway?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if choice != QMessageBox.Yes:
+                return
+
+        before = {key.fingerprint for key in self.public_keys}
+
+        result = self.gpg.import_key_text(text)
+        if result.ok:
+            self.output.setPlainText("Key imported successfully from clipboard.")
+            QMessageBox.information(self, "Imported", "Key imported successfully from clipboard.")
             self.refresh_keys()
+
+            after = {key.fingerprint for key in self.public_keys}
+            new_keys = [fp for fp in after if fp not in before]
+
+            if new_keys:
+                choice = QMessageBox.question(
+                    self,
+                    "Configure trust",
+                    "Key imported successfully.\n\nDo you want to configure trust/signing for the imported key now?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes,
+                )
+                if choice == QMessageBox.Yes:
+                    self.configure_trust(new_keys[0])
         else:
             msg = result.stderr.strip() or self.gpg.describe_generic_failure(result)
             self.output.setPlainText(msg)
@@ -371,7 +529,11 @@ class ManageKeysDialog(QDialog):
 
         secret_too = fingerprint in self.secret_fingerprints
 
-        extra = "\nA secret key also exists and will be deleted first." if secret_too else ""
+        extra = (
+            "\nA secret key also exists and will be deleted first."
+            if secret_too
+            else ""
+        )
         choice = QMessageBox.question(
             self,
             "Delete key",
@@ -397,8 +559,58 @@ class ManageKeysDialog(QDialog):
         dialog.exec()
         self.refresh_keys()
 
+    def configure_trust_for_selected_key(self) -> None:
+        fingerprint = self.current_fingerprint()
+        if not fingerprint:
+            QMessageBox.warning(self, "No key selected", "Select a key first.")
+            return
+        self.configure_trust(fingerprint)
+
+    def configure_trust(self, fingerprint: str) -> None:
+        secret_keys = self.gpg.list_secret_keys()
+
+        dialog = TrustKeyDialog(self.gpg, fingerprint, secret_keys, self)
+        if not dialog.exec():
+            return
+
+        messages = []
+
+        signer = dialog.selected_signer()
+        if dialog.sign_key_check.isChecked() and signer:
+            sign_result = self.gpg.sign_public_key(
+                target_fingerprint=fingerprint,
+                signer=signer,
+                local_only=dialog.local_sign_check.isChecked(),
+            )
+            if not sign_result.ok:
+                msg = sign_result.stderr.strip() or self.gpg.describe_generic_failure(sign_result)
+                self.output.setPlainText(msg)
+                QMessageBox.critical(self, "Key signing failed", msg)
+                return
+            messages.append("Key certification created.")
+
+        ownertrust = dialog.selected_ownertrust()
+        if ownertrust:
+            trust_result = self.gpg.set_ownertrust(fingerprint, ownertrust)
+            if not trust_result.ok:
+                msg = trust_result.stderr.strip() or self.gpg.describe_generic_failure(trust_result)
+                self.output.setPlainText(msg)
+                QMessageBox.critical(self, "Ownertrust update failed", msg)
+                return
+            messages.append(f"Ownertrust set to: {ownertrust}")
+
+        if not messages:
+            messages.append("No changes were selected.")
+
+        self.refresh_keys()
+        self.output.setPlainText("\n".join(messages))
+        QMessageBox.information(self, "Done", "\n".join(messages))
+
+
 class RecipientPickerDialog(QDialog):
-    def __init__(self, keys: List[GPGKey], selected_ids: List[str] | None = None, parent=None) -> None:
+    def __init__(
+        self, keys: List[GPGKey], selected_ids: List[str] | None = None, parent=None
+    ) -> None:
         super().__init__(parent)
         self.keys = keys
         self.selected_ids = set(selected_ids or [])

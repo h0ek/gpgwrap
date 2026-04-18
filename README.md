@@ -22,12 +22,14 @@ It provides a simple interface for encrypting, decrypting, signing, and verifyin
 - Verify file signatures
 
 ### Key management
-- List available public and secret keys
 - Import keys from file
+- Import armored keys directly from clipboard
 - Export public keys
 - Copy public key to clipboard
 - Delete keys
 - Generate new keys
+- Sign public keys (local or exportable) after fingerprint verification
+- Set ownertrust independently of key signing
 
 ## Requirements
 
@@ -50,6 +52,11 @@ pipx install git+https://github.com/h0ek/gpgwrap.git
 gpgwrap
 ```
 
+## Keyboard shortcuts
+
+- `Ctrl+E` — switch to Encrypt and run the action in the current mode
+- `Ctrl+D` — switch to Decrypt and run the action in the current mode
+
 ## Install desktop launcher and icon
 
 After installation, you can install the desktop entry and icon for the current user:
@@ -62,6 +69,7 @@ After that, GPGWrap should appear in your application menu.
 - GPGWrap uses the system GnuPG installation.
 - Your keys remain managed by your local GPG setup.
 - The application is intended for desktop Linux use.
+- If a message decrypts successfully but the signer public key is missing, GPGWrap will still show the decrypted plaintext and report that signature verification could not be completed.
 
 ## Uninstall
 
