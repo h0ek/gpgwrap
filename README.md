@@ -71,6 +71,14 @@ After that, GPGWrap should appear in your application menu.
 - The application is intended for desktop Linux use.
 - If a message decrypts successfully but the signer public key is missing, GPGWrap will still show the decrypted plaintext and report that signature verification could not be completed.
 
+## Upgrade
+
+If you installed GPGWrap from GitHub, you may need to force reinstall to get the latest version:
+
+```bash
+pipx install --force git+https://github.com/h0ek/gpgwrap.git
+```
+
 ## Uninstall
 
 Remove the application:
