@@ -4,7 +4,7 @@ GPGWrap is a lightweight Linux desktop GUI for common OpenPGP tasks using the sy
 
 It provides a simple interface for encrypting, decrypting, signing, and verifying text or files, plus basic key management and key generation.
 
-![GPGWrap screenshot](screenshot.webp)
+![GPGWrap screenshot](https://raw.githubusercontent.com/h0ek/gpgwrap/main/screenshot.webp)
 
 ## Features
 
@@ -41,6 +41,10 @@ It provides a simple interface for encrypting, decrypting, signing, and verifyin
 
 ## Install with pipx
 
+```bash
+pipx install gpgwrap
+```
+
 Install directly from GitHub:
 
 ```bash
@@ -72,6 +76,10 @@ After that, GPGWrap should appear in your application menu.
 - If a message decrypts successfully but the signer public key is missing, GPGWrap will still show the decrypted plaintext and report that signature verification could not be completed.
 
 ## Upgrade
+
+```bash
+pipx upgrade gpgwrap
+```
 
 If you installed GPGWrap from GitHub, you may need to force reinstall to get the latest version:
 
