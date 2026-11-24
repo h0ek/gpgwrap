@@ -31,6 +31,11 @@ It provides a simple interface for encrypting, decrypting, signing, and verifyin
 - Sign public keys (local or exportable) after fingerprint verification
 - Set ownertrust independently of key signing
 
+### Operation controls
+- Responsive GPG operations with a cancel button
+- Confirmation before replacing existing output files
+- Automatic main-window decorations: standard on GNOME/KDE, hidden on Sway/Hyprland
+
 ## Requirements
 
 - Linux desktop environment
@@ -73,7 +78,12 @@ After that, GPGWrap should appear in your application menu.
 - GPGWrap uses the system GnuPG installation.
 - Your keys remain managed by your local GPG setup.
 - The application is intended for desktop Linux use.
-- If a message decrypts successfully but the signer public key is missing, GPGWrap will still show the decrypted plaintext and report that signature verification could not be completed.
+- Decryption and signature verification are reported separately. Successfully decrypted content can be shown or saved with an explicit signature warning; failed integrity checks discard the output.
+- Text mode uses UTF-8 and preserves leading/trailing whitespace. Use File mode for binary data or byte-exact file signatures.
+- Output files are written through a private temporary file. The input file and its links cannot be used as output, and existing output files are only replaced after a successful operation.
+- Message contents are excluded from the GPG log. Clear fields also clears the log.
+- Cancellation stops GPG; keyring changes already made are retained.
+- Set `GPGWRAP_DECORATIONS=on` or `GPGWRAP_DECORATIONS=off` to override automatic main-window decorations.
 
 ## Upgrade
 

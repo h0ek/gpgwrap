@@ -11,12 +11,21 @@ class GPGStatus:
 
 
 @dataclass
+class GPGSignature:
+    key: str
+    state: str
+
+
+@dataclass
 class GPGResult:
     ok: bool
     stdout: str
     stderr: str
     returncode: int
     statuses: List[GPGStatus] = field(default_factory=list)
+    signatures: List[GPGSignature] = field(default_factory=list)
+    decryption_ok: bool = False
+    error: str = ""
 
     def status_lines(self) -> List[str]:
         lines: List[str] = []

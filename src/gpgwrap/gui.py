@@ -5,7 +5,7 @@ from typing import List, Optional
 from importlib.resources import files
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut, QTextCursor
 from PySide6.QtWidgets import QStackedWidget
 from PySide6.QtWidgets import (
     QApplication,
@@ -33,13 +33,16 @@ from PySide6.QtWidgets import (
 from .dialogs import AboutDialog, ManageKeysDialog, RecipientPickerDialog
 from .gpg_service import GPGService
 from .models import GPGKey, GPGResult
+from .operations import run_process_dialog
+from .output_dialog import confirm_output
+from .window_style import apply_window_style
 
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
 
-        self.gpg = GPGService()
+        self.gpg = GPGService(runner=lambda command, data: run_process_dialog(self, command, data))
         self.public_keys: List[GPGKey] = []
         self.secret_keys: List[GPGKey] = []
         self.text_recipient_ids: List[str] = []
@@ -49,6 +52,7 @@ class MainWindow(QMainWindow):
         self.current_text_action = "encrypt"
         self.current_file_action = "encrypt"
 
+        apply_window_style(self)
         self.setWindowTitle("GPGWrap")
         self.resize(900, 780)
 
@@ -288,6 +292,7 @@ class MainWindow(QMainWindow):
 
         self.text_status_label = QLabel("Status: waiting")
         self.text_status_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.text_status_label.setWordWrap(True)
         editor_layout.addWidget(self.text_status_label)
 
         layout.addWidget(editor_box)
@@ -353,11 +358,14 @@ class MainWindow(QMainWindow):
 
         self.file_detached_check = QCheckBox("Detached signature")
         self.file_detached_check.setChecked(True)
+        self.file_sign_armor_check = QCheckBox("ASCII armor")
+        self.file_sign_armor_check.setChecked(True)
         self.file_signer_label = QLabel("Signing key:")
         self.file_signer_combo = QComboBox()
         self.file_signer_combo.setMinimumWidth(420)
 
         fsign_layout.addWidget(self.file_detached_check)
+        fsign_layout.addWidget(self.file_sign_armor_check)
         fsign_layout.addWidget(self.file_signer_label)
         fsign_layout.addWidget(self.file_signer_combo)
         fsign_layout.addStretch(1)
@@ -411,6 +419,7 @@ class MainWindow(QMainWindow):
 
         self.file_status_label = QLabel("Status: waiting")
         self.file_status_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.file_status_label.setWordWrap(True)
         layout.addWidget(self.file_status_label)
 
         return box
@@ -428,6 +437,7 @@ class MainWindow(QMainWindow):
 
         self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
+        self.log_output.document().setMaximumBlockCount(1000)
         self.log_output.setVisible(False)
         layout.addWidget(self.log_output)
 
@@ -611,9 +621,8 @@ class MainWindow(QMainWindow):
 
     def _append_log(self, title: str, result: GPGResult) -> None:
         blocks = [f"=== {title} ==="]
-        if result.stdout.strip():
-            blocks.append("[stdout]")
-            blocks.append(result.stdout.strip())
+        if result.error:
+            blocks.append(result.error)
         if result.stderr.strip():
             blocks.append("[stderr]")
             blocks.append(result.stderr.strip())
@@ -622,9 +631,14 @@ class MainWindow(QMainWindow):
             blocks.append("[parsed statuses]")
             blocks.extend(statuses)
         blocks.append("")
-        self.log_output.append("\n".join(blocks))
+        cursor = self.log_output.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        cursor.insertText("\n".join(blocks) + "\n")
+        self.log_output.setTextCursor(cursor)
 
     def _friendly_error(self, result: GPGResult, default_message: str) -> str:
+        if result.error:
+            return result.error
         tags = {item.tag for item in result.statuses}
 
         if "NO_PUBKEY" in tags:
@@ -779,6 +793,7 @@ class MainWindow(QMainWindow):
     def clear_all_fields(self) -> None:
         self._clear_text_mode()
         self._clear_file_mode()
+        self.log_output.clear()
 
     def pick_input_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -789,7 +804,8 @@ class MainWindow(QMainWindow):
 
     def pick_output_file(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
-            self, "Select output file", str(Path.home())
+            self, "Select output file", str(Path.home()),
+            options=QFileDialog.DontConfirmOverwrite,
         )
         if path:
             self.file_output_edit.setText(path)
@@ -812,7 +828,7 @@ class MainWindow(QMainWindow):
                 )
                 return
 
-            text = self.text_editor.toPlainText().strip()
+            text = self.text_editor.toPlainText()
             if not text:
                 self._show_error("Missing text", "Paste plaintext first.")
                 return
@@ -830,7 +846,7 @@ class MainWindow(QMainWindow):
             self._append_log("Encrypt text", result)
 
             if result.ok:
-                self.text_editor.setPlainText(result.stdout.strip())
+                self.text_editor.setPlainText(result.stdout)
                 self.text_status_label.setText(
                     f"Status: {self.gpg.describe_encrypt_result(result)}"
                 )
@@ -840,7 +856,7 @@ class MainWindow(QMainWindow):
                 self._show_error("Encryption failed", msg)
 
         elif action == "decrypt":
-            text = self.text_editor.toPlainText().strip()
+            text = self.text_editor.toPlainText()
             if not text:
                 self._show_error("Missing text", "Paste encrypted armored text first.")
                 return
@@ -848,21 +864,20 @@ class MainWindow(QMainWindow):
             result = self.gpg.decrypt_text(text)
             self._append_log("Decrypt text", result)
 
-            if result.ok:
-                self.text_editor.setPlainText(result.stdout.strip())
-                self.text_status_label.setText(
-                    f"Status: {self.gpg.describe_decrypt_result(result)}"
-                )
+            if result.ok or result.decryption_ok:
+                self.text_editor.setPlainText(result.stdout)
+                summary = self.gpg.describe_decrypt_result(result)
+                self.text_status_label.setText(f"Status: {summary}")
+                if not result.ok:
+                    QMessageBox.warning(self, "Decrypted with signature warnings", summary)
             else:
-                msg = self._friendly_error(
-                    result, self.gpg.describe_decrypt_result(result)
-                )
+                msg = self.gpg.describe_decrypt_result(result)
                 self.text_status_label.setText(f"Status: {msg}")
                 self._show_error("Decrypt failed", msg)
 
         elif action == "sign":
             text = self.text_editor.toPlainText()
-            if not text.strip():
+            if not text:
                 self._show_error("Missing text", "Paste plaintext first.")
                 return
 
@@ -882,7 +897,7 @@ class MainWindow(QMainWindow):
             self._append_log("Sign text", result)
 
             if result.ok:
-                self.text_editor.setPlainText(result.stdout.strip())
+                self.text_editor.setPlainText(result.stdout)
                 self.text_status_label.setText(
                     f"Status: {self.gpg.describe_sign_result(result)}"
                 )
@@ -893,7 +908,7 @@ class MainWindow(QMainWindow):
 
         elif action == "verify":
             if self.verify_mode_combo.currentIndex() == 0:
-                signed_text = self.text_editor.toPlainText().strip()
+                signed_text = self.text_editor.toPlainText()
                 if not signed_text:
                     self._show_error(
                         "Missing text", "Paste clear-signed message first."
@@ -901,8 +916,8 @@ class MainWindow(QMainWindow):
                     return
                 result = self.gpg.verify_clearsigned_text(signed_text)
             else:
-                text = self.text_editor.toPlainText().strip()
-                signature = self.text_signature_input.toPlainText().strip()
+                text = self.text_editor.toPlainText()
+                signature = self.text_signature_input.toPlainText()
                 if not text:
                     self._show_error("Missing text", "Paste message/plaintext first.")
                     return
@@ -920,7 +935,7 @@ class MainWindow(QMainWindow):
                 self.text_status_label.setText(f"Status: {summary}")
                 self._show_info("Verification result", summary)
             else:
-                msg = self._friendly_error(result, summary)
+                msg = summary
                 self.text_status_label.setText(f"Status: {msg}")
                 self._show_error("Verification failed", msg)
 
@@ -955,12 +970,16 @@ class MainWindow(QMainWindow):
                     )
                     return
 
+            overwrite = confirm_output(self, output_file, input_file)
+            if overwrite is None:
+                return
             result = self.gpg.encrypt_file(
                 input_file,
                 output_file,
                 recipients,
                 armor=self.file_ascii_armor_check.isChecked(),
                 sign_with=signer,
+                overwrite=overwrite,
             )
             self._append_log("Encrypt file", result)
 
@@ -979,17 +998,19 @@ class MainWindow(QMainWindow):
                 self._show_error("Missing output file", "Select output file first.")
                 return
 
-            result = self.gpg.decrypt_file(input_file, output_file)
+            overwrite = confirm_output(self, output_file, input_file)
+            if overwrite is None:
+                return
+            result = self.gpg.decrypt_file(input_file, output_file, overwrite=overwrite)
             self._append_log("Decrypt file", result)
 
-            if result.ok:
-                self.file_status_label.setText(
-                    f"Status: {self.gpg.describe_decrypt_result(result)}"
-                )
+            if result.ok or result.decryption_ok:
+                summary = self.gpg.describe_decrypt_result(result)
+                self.file_status_label.setText(f"Status: {summary}")
+                if not result.ok:
+                    QMessageBox.warning(self, "Decrypted with signature warnings", summary)
             else:
-                msg = self._friendly_error(
-                    result, self.gpg.describe_decrypt_result(result)
-                )
+                msg = self.gpg.describe_decrypt_result(result)
                 self.file_status_label.setText(f"Status: {msg}")
                 self._show_error("File decrypt failed", msg)
 
@@ -1006,12 +1027,16 @@ class MainWindow(QMainWindow):
                 )
                 return
 
+            overwrite = confirm_output(self, output_file, input_file)
+            if overwrite is None:
+                return
             result = self.gpg.sign_file(
                 input_file,
                 output_file,
                 signer,
                 detached=self.file_detached_check.isChecked(),
-                armor=self.file_ascii_armor_check.isChecked(),
+                armor=self.file_sign_armor_check.isChecked(),
+                overwrite=overwrite,
             )
             self._append_log("Sign file", result)
 
@@ -1040,6 +1065,6 @@ class MainWindow(QMainWindow):
                 self.file_status_label.setText(f"Status: {summary}")
                 self._show_info("Verification result", summary)
             else:
-                msg = self._friendly_error(result, summary)
+                msg = summary
                 self.file_status_label.setText(f"Status: {msg}")
                 self._show_error("File verification failed", msg)

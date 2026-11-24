@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List
 from importlib.resources import files
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSignalBlocker
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 from . import __app_name__, __author__, __github_url__, __version__
 from .gpg_service import GPGService
 from .models import GPGKey
+from .output_dialog import confirm_output
 
 
 class AboutDialog(QDialog):
@@ -188,11 +189,13 @@ class GenerateKeyDialog(QDialog):
             passphrase=passphrase,
         )
 
+        self.passphrase_edit.clear()
+        self.passphrase_confirm_edit.clear()
         if result.ok:
             self.output.setPlainText("Key was created successfully.")
             QMessageBox.information(self, "Success", "Key was created.")
         else:
-            msg = result.stderr.strip() or self.gpg.describe_generic_failure(result)
+            msg = result.error or result.stderr.strip() or self.gpg.describe_generic_failure(result)
             self.output.setPlainText(msg)
             QMessageBox.critical(self, "Key generation failed", msg)
 
@@ -412,7 +415,7 @@ class ManageKeysDialog(QDialog):
             QMessageBox.information(self, "Copied", "Public key copied to clipboard.")
             self.output.setPlainText("Public key copied to clipboard.")
         else:
-            msg = result.stderr.strip() or self.gpg.describe_generic_failure(result)
+            msg = result.error or result.stderr.strip() or self.gpg.describe_generic_failure(result)
             self.output.setPlainText(msg)
             QMessageBox.critical(self, "Export failed", msg)
 
@@ -427,18 +430,22 @@ class ManageKeysDialog(QDialog):
             "Export public key",
             f"{fingerprint}.asc",
             "ASCII armored key (*.asc);;All files (*)",
+            options=QFileDialog.DontConfirmOverwrite,
         )
         if not path:
             return
 
-        result = self.gpg.export_public_key_to_file(fingerprint, path)
+        overwrite = confirm_output(self, path)
+        if overwrite is None:
+            return
+        result = self.gpg.export_public_key_to_file(fingerprint, path, overwrite=overwrite)
         if result.ok:
             self.output.setPlainText(f"Public key exported to:\n{path}")
             QMessageBox.information(
                 self, "Exported", f"Public key exported to:\n{path}"
             )
         else:
-            msg = result.stderr.strip() or self.gpg.describe_generic_failure(result)
+            msg = result.error or result.stderr.strip() or self.gpg.describe_generic_failure(result)
             self.output.setPlainText(msg)
             QMessageBox.critical(self, "Export failed", msg)
 
@@ -474,7 +481,7 @@ class ManageKeysDialog(QDialog):
                 if choice == QMessageBox.Yes:
                     self.configure_trust(new_keys[0])
         else:
-            msg = result.stderr.strip() or self.gpg.describe_generic_failure(result)
+            msg = result.error or result.stderr.strip() or self.gpg.describe_generic_failure(result)
             self.output.setPlainText(msg)
             QMessageBox.critical(self, "Import failed", msg)
 
@@ -517,7 +524,7 @@ class ManageKeysDialog(QDialog):
                 if choice == QMessageBox.Yes:
                     self.configure_trust(new_keys[0])
         else:
-            msg = result.stderr.strip() or self.gpg.describe_generic_failure(result)
+            msg = result.error or result.stderr.strip() or self.gpg.describe_generic_failure(result)
             self.output.setPlainText(msg)
             QMessageBox.critical(self, "Import failed", msg)
 
@@ -550,7 +557,7 @@ class ManageKeysDialog(QDialog):
             QMessageBox.information(self, "Deleted", "Key deleted successfully.")
             self.refresh_keys()
         else:
-            msg = result.stderr.strip() or self.gpg.describe_generic_failure(result)
+            msg = result.error or result.stderr.strip() or self.gpg.describe_generic_failure(result)
             self.output.setPlainText(msg)
             QMessageBox.critical(self, "Delete failed", msg)
 
@@ -583,7 +590,7 @@ class ManageKeysDialog(QDialog):
                 local_only=dialog.local_sign_check.isChecked(),
             )
             if not sign_result.ok:
-                msg = sign_result.stderr.strip() or self.gpg.describe_generic_failure(sign_result)
+                msg = sign_result.error or sign_result.stderr.strip() or self.gpg.describe_generic_failure(sign_result)
                 self.output.setPlainText(msg)
                 QMessageBox.critical(self, "Key signing failed", msg)
                 return
@@ -593,7 +600,7 @@ class ManageKeysDialog(QDialog):
         if ownertrust:
             trust_result = self.gpg.set_ownertrust(fingerprint, ownertrust)
             if not trust_result.ok:
-                msg = trust_result.stderr.strip() or self.gpg.describe_generic_failure(trust_result)
+                msg = trust_result.error or trust_result.stderr.strip() or self.gpg.describe_generic_failure(trust_result)
                 self.output.setPlainText(msg)
                 QMessageBox.critical(self, "Ownertrust update failed", msg)
                 return
@@ -613,7 +620,7 @@ class RecipientPickerDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.keys = keys
-        self.selected_ids = set(selected_ids or [])
+        self.selected_ids = set(selected_ids or []) & {key.key_id for key in keys}
         self.setWindowTitle("Choose recipients")
         self.resize(720, 520)
         self._build_ui()
@@ -632,7 +639,10 @@ class RecipientPickerDialog(QDialog):
 
         self.key_list = QListWidget()
         self.key_list.setSelectionMode(QAbstractItemView.MultiSelection)
+        self.key_list.itemSelectionChanged.connect(self._remember_selection)
         layout.addWidget(self.key_list)
+        self.selection_label = QLabel()
+        layout.addWidget(self.selection_label)
 
         btn_row = QHBoxLayout()
         ok_btn = QPushButton("Use selected")
@@ -650,29 +660,24 @@ class RecipientPickerDialog(QDialog):
         haystack = " ".join([key.key_id, key.fingerprint, *key.user_ids]).lower()
         return term.lower() in haystack
 
+    def _remember_selection(self) -> None:
+        visible = {str(self.key_list.item(index).data(Qt.UserRole)) for index in range(self.key_list.count())}
+        self.selected_ids.difference_update(visible)
+        self.selected_ids.update(str(item.data(Qt.UserRole)) for item in self.key_list.selectedItems())
+        self.selection_label.setText(f"Selected recipients: {len(self.selected_ids)} (including hidden)")
+
     def populate_list(self) -> None:
-        selected_before = set(self.selected_key_ids())
-        if not selected_before:
-            selected_before = set(self.selected_ids)
-
-        self.key_list.clear()
-        term = self.filter_edit.text().strip()
-
-        for key in self.keys:
-            if not self._match_key(key, term):
-                continue
-
-            item = QListWidgetItem(f"{key.primary_uid} | {key.key_id}")
-            item.setData(Qt.UserRole, key.key_id)
-            self.key_list.addItem(item)
-
-            if key.key_id in selected_before:
-                item.setSelected(True)
+        with QSignalBlocker(self.key_list):
+            self.key_list.clear()
+            term = self.filter_edit.text().strip()
+            for key in self.keys:
+                if not self._match_key(key, term):
+                    continue
+                item = QListWidgetItem(f"{key.primary_uid} | {key.key_id}")
+                item.setData(Qt.UserRole, key.key_id)
+                self.key_list.addItem(item)
+                item.setSelected(key.key_id in self.selected_ids)
+        self.selection_label.setText(f"Selected recipients: {len(self.selected_ids)} (including hidden)")
 
     def selected_key_ids(self) -> List[str]:
-        values: List[str] = []
-        for item in self.key_list.selectedItems():
-            value = item.data(Qt.UserRole)
-            if value:
-                values.append(str(value))
-        return values
+        return [key.key_id for key in self.keys if key.key_id in self.selected_ids]

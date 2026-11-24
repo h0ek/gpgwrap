@@ -87,3 +87,4 @@ screenshots/
 # 🔑 GPG / crypto
 *.asc
 *.gpg
+!tests/fixtures/*.asc
