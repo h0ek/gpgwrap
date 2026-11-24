@@ -34,7 +34,7 @@ It provides a simple interface for encrypting, decrypting, signing, and verifyin
 ### Operation controls
 - Responsive GPG operations with a cancel button
 - Confirmation before replacing existing output files
-- Automatic main-window decorations: standard on GNOME/KDE, hidden on Sway/Hyprland
+- Main-window title bar: title and Close on Sway/Hyprland; standard decorations with Minimize, Maximize and Close requested on other desktops
 
 ## Requirements
 
@@ -83,7 +83,7 @@ After that, GPGWrap should appear in your application menu.
 - Output files are written through a private temporary file. The input file and its links cannot be used as output, and existing output files are only replaced after a successful operation.
 - Message contents are excluded from the GPG log. Clear fields also clears the log.
 - Cancellation stops GPG; keyring changes already made are retained.
-- Set `GPGWRAP_DECORATIONS=on` or `GPGWRAP_DECORATIONS=off` to override automatic main-window decorations.
+- Set `GPGWRAP_DECORATIONS=on` to use the system title bar with all window controls, or `GPGWRAP_DECORATIONS=off` to hide the title bar. System title bars follow the desktop theme and window-manager rules.
 
 ## Upgrade
 

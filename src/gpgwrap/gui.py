@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenuBar,
     QMessageBox,
     QPushButton,
     QPlainTextEdit,
@@ -36,6 +37,7 @@ from .models import GPGKey, GPGResult
 from .operations import run_process_dialog
 from .output_dialog import confirm_output
 from .window_style import apply_window_style
+from .title_bar import TitleBar
 
 
 class MainWindow(QMainWindow):
@@ -52,7 +54,7 @@ class MainWindow(QMainWindow):
         self.current_text_action = "encrypt"
         self.current_file_action = "encrypt"
 
-        apply_window_style(self)
+        self._use_custom_title_bar = apply_window_style(self)
         self.setWindowTitle("GPGWrap")
         self.resize(900, 780)
 
@@ -79,7 +81,20 @@ class MainWindow(QMainWindow):
             pass
 
     def _build_menu(self) -> None:
-        menubar = self.menuBar()
+        self.title_bar = None
+        if self._use_custom_title_bar:
+            header = QWidget(self)
+            layout = QVBoxLayout(header)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(0)
+            self.title_bar = TitleBar(self)
+            layout.addWidget(self.title_bar)
+            menubar = QMenuBar(header)
+            menubar.setNativeMenuBar(False)
+            layout.addWidget(menubar)
+            self.setMenuWidget(header)
+        else:
+            menubar = self.menuBar()
         app_menu = menubar.addMenu("App")
 
         refresh_action = QAction("Refresh keys", self)
